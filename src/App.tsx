@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from './supabase';
 import { 
   TrendingUp, 
   Clock, 
@@ -18,7 +19,8 @@ import {
   AlertCircle,
   Trophy,
   RefreshCcw,
-  Briefcase
+  Briefcase,
+  ListOrdered
 } from 'lucide-react';
 
 // --- Types ---
@@ -52,6 +54,13 @@ interface GameEvent {
   title: string;
   description: string;
   options: [EventOption, EventOption];
+}
+
+interface LeaderboardEntry {
+  id: string;
+  company_name: string;
+  market_value: number;
+  created_at: string;
 }
 
 // --- Constants ---
@@ -328,6 +337,54 @@ export default function App() {
   const [currentEvent, setCurrentEvent] = useState<GameEvent | null>(null);
   const [eventMessage, setEventMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+
+  // --- Supabase Logic ---
+
+  const fetchLeaderboard = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('leaderboard')
+        .select('*')
+        .order('market_value', { ascending: false })
+        .limit(10);
+      
+      if (error) throw error;
+      if (data) setLeaderboard(data);
+    } catch (err) {
+      console.error('Error fetching leaderboard:', err);
+    }
+  };
+
+  const saveScore = async () => {
+    try {
+      const { error } = await supabase
+        .from('leaderboard')
+        .insert([
+          { 
+            company_name: companyName, 
+            market_value: marketValue,
+            project_type: selectedProject?.name 
+          }
+        ]);
+      
+      if (error) throw error;
+      fetchLeaderboard();
+    } catch (err) {
+      console.error('Error saving score:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchLeaderboard();
+  }, []);
+
+  useEffect(() => {
+    if (gameState === 'EXPANSION' || gameState === 'GAME_OVER') {
+      saveScore();
+    }
+  }, [gameState]);
 
   // --- Game Logic ---
 
@@ -407,35 +464,74 @@ export default function App() {
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="max-w-md w-full bg-white border-4 border-black p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+      className="max-w-md w-full"
     >
-      <div className="flex justify-center mb-6">
-        <div className="bg-yellow-400 p-4 border-4 border-black rounded-2xl rotate-3">
-          <TrendingUp className="w-12 h-12 text-black" />
+      <div className="bg-white border-4 border-black p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] mb-6">
+        <div className="flex justify-center mb-6">
+          <div className="bg-yellow-400 p-4 border-4 border-black rounded-2xl rotate-3">
+            <TrendingUp className="w-12 h-12 text-black" />
+          </div>
+        </div>
+        <h1 className="text-4xl font-black text-center mb-2 uppercase tracking-tighter">رائد أعمال</h1>
+        <p className="text-center text-gray-600 mb-8 font-bold">الطريق إلى النجاح</p>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-black uppercase mb-2">اسم الشركة</label>
+            <input 
+              type="text" 
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              placeholder="مثلاً: شركة الصقر"
+              className="w-full p-4 border-4 border-black font-bold focus:outline-none focus:bg-yellow-50"
+            />
+          </div>
+          <button 
+            onClick={startGame}
+            disabled={!companyName.trim()}
+            className="w-full bg-black text-white p-4 font-black uppercase tracking-widest hover:bg-gray-800 disabled:bg-gray-400 flex items-center justify-center gap-2 transition-transform active:scale-95"
+          >
+            ابدأ الرحلة <ChevronRight className="w-5 h-5" />
+          </button>
+          
+          <button 
+            onClick={() => setShowLeaderboard(!showLeaderboard)}
+            className="w-full bg-white text-black p-3 font-black uppercase border-4 border-black hover:bg-yellow-100 flex items-center justify-center gap-2"
+          >
+            <ListOrdered className="w-5 h-5" /> {showLeaderboard ? 'إخفاء المتصدرين' : 'قائمة المتصدرين'}
+          </button>
         </div>
       </div>
-      <h1 className="text-4xl font-black text-center mb-2 uppercase tracking-tighter">رائد أعمال</h1>
-      <p className="text-center text-gray-600 mb-8 font-bold">الطريق إلى النجاح</p>
-      
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-black uppercase mb-2">اسم الشركة</label>
-          <input 
-            type="text" 
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            placeholder="مثلاً: شركة الصقر"
-            className="w-full p-4 border-4 border-black font-bold focus:outline-none focus:bg-yellow-50"
-          />
-        </div>
-        <button 
-          onClick={startGame}
-          disabled={!companyName.trim()}
-          className="w-full bg-black text-white p-4 font-black uppercase tracking-widest hover:bg-gray-800 disabled:bg-gray-400 flex items-center justify-center gap-2 transition-transform active:scale-95"
-        >
-          ابدأ الرحلة <ChevronRight className="w-5 h-5" />
-        </button>
-      </div>
+
+      <AnimatePresence>
+        {showLeaderboard && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="bg-white border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] overflow-hidden"
+          >
+            <h3 className="text-xl font-black mb-4 border-b-4 border-black pb-2 flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-yellow-500" /> قائمة أفضل الشركات
+            </h3>
+            <div className="space-y-3">
+              {leaderboard.length === 0 ? (
+                <p className="text-center text-gray-500 font-bold py-4">لا توجد نتائج بعد. كن أول الفائزين!</p>
+              ) : (
+                leaderboard.map((entry, idx) => (
+                  <div key={entry.id} className="flex items-center justify-between p-2 border-b-2 border-gray-100 last:border-0">
+                    <div className="flex items-center gap-3">
+                      <span className="font-black text-lg w-6">{idx + 1}.</span>
+                      <span className="font-bold">{entry.company_name}</span>
+                    </div>
+                    <span className="font-mono font-black text-blue-600">${entry.market_value.toLocaleString()}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 
